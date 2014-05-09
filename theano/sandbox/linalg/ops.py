@@ -1232,28 +1232,28 @@ class GEighGrad(Op):
         gA = sum(outer(v[:, n], v[:, n] * gw[n] + GA(n))
                 for n in xrange(N))
 
-        def bump(i, j):
-            t = numpy.zeros((N, N))
-            t[i, j] = 1
-            return t
-        
-        gB = numpy.zeros((N, N), dtype=node.outputs[0].dtype)
-        for kk, wweight in enumerate(gw):
-            for i in range(N):
-                for j in range(N):
-                    gB[i,j] += -w[kk] * wweight * v[i, kk] * v[j, kk]
+        gB = - v.dot(numpy.diag(gw*w).dot(v.T))
 
 
-        h = 1e-7
-        # derivative of eigenectors with respect to b[i,j]
-        dX_Bij = lambda i,j : (scipy.linalg.eigh(a, b + h*bump(i,j))[1] - scipy.linalg.eigh(a, b)[1]) / h
-        for i in range(N):
-            for j in range(N):
-                gB[i,j] += (gv * dX_Bij(i,j)).sum()
+        if numpy.any(gv != 0):
+            def bump(i, j):
+                t = numpy.zeros((N, N))
+                t[i, j] = 1
+                return t
+            
+            h = 1e-7
+            # derivative of eigenectors with respect to b[i,j]
+            dX_Bmn = lambda m,n : (scipy.linalg.eigh(a, b + h*bump(m,n))[1] - scipy.linalg.eigh(a, b)[1]) / h
+            for m in range(N):
+                for n in range(N):
+                    gB[m,n] += (gv * dX_Bmn(m,n)).sum()
 
-        #a_imnl = lambda i,m,n,l: -w[i] * v[:, l].T.dot(bump(m, n).dot(v[:, i])) / (w[i] - w[l])
-
-        
+            #a_imnl = lambda i,m,n,l: -w[i] * v[:, l].T.dot(bump(m, n).dot(v[:, i])) / (w[i] - w[l])
+            # a_imnk = lambda i,m,n,k : -w[i] * v[m,k] * v[n,i] / (w[i]-w[k] if i != k else 2)
+            # dXip_Bmn = lambda i, p, m, n : sum(a_imnk(p,m,n,k) * v[i, k] for k in range(N))
+            # 
+            # print dX_Bmn(0,0)
+            # print dXip_Bmn(0,0,0,0)
 
 
         # Numpy's eigh(a, 'L') (eigh(a, 'U')) is a function of tril(a)
