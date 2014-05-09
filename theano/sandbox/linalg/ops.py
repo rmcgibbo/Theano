@@ -1241,7 +1241,7 @@ class GEighGrad(Op):
         for kk, wweight in enumerate(gw):
             for i in range(N):
                 for j in range(N):
-                    gB[i,j] += wweight * (v[:, kk].T.dot(-w[kk]*bump(i, j).dot(v[:, kk])))
+                    gB[i,j] += -w[kk] * wweight * v[i, kk] * v[j, kk]
 
 
         h = 1e-7
@@ -1250,6 +1250,10 @@ class GEighGrad(Op):
         for i in range(N):
             for j in range(N):
                 gB[i,j] += (gv * dX_Bij(i,j)).sum()
+
+        #a_imnl = lambda i,m,n,l: -w[i] * v[:, l].T.dot(bump(m, n).dot(v[:, i])) / (w[i] - w[l])
+
+        
 
 
         # Numpy's eigh(a, 'L') (eigh(a, 'U')) is a function of tril(a)
