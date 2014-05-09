@@ -1032,8 +1032,13 @@ def _populate_grad_dict(var_to_app_to_idx,
                                     "expected iterable." % str(node.op))
 
                 if len(input_grads) != len(inputs):
-                    raise ValueError(("%s returned the wrong number of" +
-                                      " gradient terms.") % str(node.op))
+                    print(input_grads)
+                    print(inputs)
+                    raise ValueError(
+                        ("%s returned the wrong number of" +
+                         " gradient terms. %d != %d") % (
+                             str(node.op), len(input_grads), len(inputs)))
+                             
 
             # must convert to list in case the op returns a tuple
             # we won't be able to post-process out the Nones if it does that

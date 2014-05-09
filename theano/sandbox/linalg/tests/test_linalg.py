@@ -32,7 +32,7 @@ from theano.sandbox.linalg.ops import (cholesky,
                                        Eig,
                                        inv_as_solve,
                                        )
-from theano.sandbox.linalg import eig, eigh
+from theano.sandbox.linalg import eig, eigh, geigh
 from nose.plugins.skip import SkipTest
 from nose.plugins.attrib import attr
 
@@ -573,3 +573,42 @@ def test_matrix_inverse_solve():
     node = matrix_inverse(A).dot(b).owner
     [out] = inv_as_solve.transform(node)
     assert isinstance(out.owner.op, Solve)
+
+
+def test_geigh():
+    if not imported_scipy:
+        raise SkipTest("Scipy needed for the Solve op.")
+    import scipy.linalg
+
+    A = theano.tensor.dmatrix('a')
+    B = theano.tensor.dmatrix('b')
+    f = function([A,B], geigh(A, B))
+    
+    rng = numpy.random.RandomState(utt.fetch_seed())
+    a = rng.randn(5, 5)
+    a = a + a.T
+    b = numpy.eye(5, 5)
+
+    w, v = f(a,b)
+    refw, refv = scipy.linalg.eigh(a, b)
+    numpy.testing.assert_array_almost_equal(w, refw)
+    numpy.testing.assert_array_almost_equal(v, refv)
+
+def test_geigh_grad():
+    if not imported_scipy:
+        raise SkipTest("Scipy needed for the Solve op.")
+    import scipy.linalg
+
+    A = theano.tensor.dmatrix('a')
+    B = theano.tensor.dmatrix('b')
+    grad = theano.gradient.grad(geigh(A, B)[0].sum(), [A])
+
+    f = function([A, B], grad)
+
+
+
+
+if __name__ == '__main__':
+    test_geigh()
+    test_geigh_grad()
+

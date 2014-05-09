@@ -1097,3 +1097,121 @@ class EighGrad(Op):
 
     def infer_shape(self, node, shapes):
         return [shapes[0]]
+
+
+
+# ----------------------------------------------------------------------------#
+
+
+class GEigh(Eig):
+    """ Return the generalized eigenvalues and
+    eigenvectors of a Hermitian or symmetric left-hand-side and
+    a positive definite right-hand-side.
+    """
+
+    def __init__(self, lower=True, turbo=True):
+        assert lower in [True, False]
+        assert turbo in [True, False]
+        self.lower = lower
+        self.turbo = turbo
+
+    def __str__(self):
+        return 'GEigh{%s, %s}' % (self.lower, self.turbo)
+
+    def props(self):
+        return self.lower, self.turbo
+
+    def make_node(self, a, b):
+        a = as_tensor_variable(a)
+        b = as_tensor_variable(b)
+        assert a.ndim == 2
+        assert b.ndim == 2
+        assert imported_scipy, (
+            "Scipy not available. Scipy is needed for the GEigh op")
+
+        out_dtype = theano.scalar.upcast(a.dtype, b.dtype)
+        w = theano.tensor.vector(dtype=out_dtype)
+        v = theano.tensor.matrix(dtype=out_dtype)
+        return Apply(self, [a, b], [w, v])
+
+    def perform(self, node, (a, b), (w, v)):
+        try:
+            w[0], v[0] = scipy.linalg.eigh(a=a, b=b, lower=self.lower, turbo=self.turbo)
+        except numpy.linalg.LinAlgError:
+            logger.debug('Failed to find generalize eigenvalues of %s' % (
+                node.inputs[0], node.inputs[1]))
+            raise
+
+    def grad(self, inputs, g_outputs):
+        a, b = inputs
+        w, v = self(a, b)
+        # Replace gradients wrt disconnected variables with
+        # zeros. This is a work-around for issue #1063.
+        gw, gv = _zero_disconnected([w, v], g_outputs)
+        print GEighGrad(self.lower, self.turbo)(a, b, w, v, gw, gv)
+        return []
+
+
+class GEighGrad(Op):
+    """Gradient of an generalized eigensystem of a Hermitian matrix.
+    """
+    def __init__(self, lower=True, turbo=True):
+        assert lower in [True, False]
+        assert turbo in [True, False]
+        self.lower = lower
+        self.turbo = turbo
+
+    def props(self):
+        return (self.lower, self.turbo)
+
+    def __hash__(self):
+        return hash((type(self), self.props()))
+
+    def __eq__(self, other):
+        return (type(self) == type(other) and self.props() == other.props())
+
+    def __str__(self):
+        return 'GEighGrad{%s, %s}' % (self.lower, self.turbo)
+
+    def make_node(self, a, b, w, v, gw, gv):
+        a, b, w, v, gw, gv = map(as_tensor_variable, (a, b, w, v, gw, gv))
+        assert a.ndim == 2
+        assert b.ndim == 2
+        assert w.ndim == 1
+        assert v.ndim == 2
+        assert gw.ndim == 1
+        assert gv.ndim == 2
+
+        #out_dtype = theano.scalar.upcast(
+        #    a.dtype, b.dtype, w.dtype, v.dtype, gw.dtype, gv.dtype)
+        #out1 = theano.tensor.matrix(dtype=out_dtype)
+        #out2 = theano.tensor.matrix(dtype=out_dtype)
+        return Apply(self, [a, b, w, v, gw, gv], [w.type(), a.type()])
+
+    def perform(self, node, inputs, outputs):
+        a, b, w, v, gw, gv = inputs
+        N = x.shape[0]
+        
+        raise ValueError()
+
+        # Numpy's eigh(a, 'L') (eigh(a, 'U')) is a function of tril(a)
+        # (triu(a)) only.  This means that partial derivative of
+        # eigh(a, 'L') (eigh(a, 'U')) with respect to a[i,j] is zero
+        # for i < j (i > j).  At the same time, non-zero components of
+        # the gradient must account for the fact that variation of the
+        # opposite triangle contributes to variation of two elements
+        # of Hermitian (symmetric) matrix. The following line
+        # implements the necessary logic.
+        out = self.tri0(g) + self.tri1(g).T
+
+        # The call to self.tri0 in perform upcast from float32 to
+        # float64 or from int* to int64 in numpy 1.6.1 but not in
+        # 1.6.2. We do not want version dependent dtype in Theano.
+        # We think it should be the same as the output.
+        outputs[0][0] = numpy.asarray(out, dtype=node.outputs[0].dtype)
+
+    #def infer_shape(self, node, shapes):
+    #    return [shapes[0]]
+
+def geigh(a, b, lower=True, turbo=True):
+    return GEigh(lower, turbo)(a, b)
