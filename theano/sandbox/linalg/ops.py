@@ -1148,8 +1148,8 @@ class GEigh(Eig):
         # Replace gradients wrt disconnected variables with
         # zeros. This is a work-around for issue #1063.
         gw, gv = _zero_disconnected([w, v], g_outputs)
-        print GEighGrad(self.lower, self.turbo)(a, b, w, v, gw, gv)
-        return []
+        gA, gB = GEighGrad(self.lower, self.turbo)(a, b, w, v, gw, gv)
+        return [gA, gB]
 
 
 class GEighGrad(Op):
@@ -1160,6 +1160,12 @@ class GEighGrad(Op):
         assert turbo in [True, False]
         self.lower = lower
         self.turbo = turbo
+        if lower:
+            self.tri0 = numpy.tril
+            self.tri1 = lambda a: numpy.triu(a, 1)
+        else:
+            self.tri0 = numpy.triu
+            self.tri1 = lambda a: numpy.tril(a, -1)
 
     def props(self):
         return (self.lower, self.turbo)
@@ -1186,13 +1192,65 @@ class GEighGrad(Op):
         #    a.dtype, b.dtype, w.dtype, v.dtype, gw.dtype, gv.dtype)
         #out1 = theano.tensor.matrix(dtype=out_dtype)
         #out2 = theano.tensor.matrix(dtype=out_dtype)
-        return Apply(self, [a, b, w, v, gw, gv], [w.type(), a.type()])
+        return Apply(self, [a, b, w, v, gw, gv], [a.type(), a.type()])
 
     def perform(self, node, inputs, outputs):
         a, b, w, v, gw, gv = inputs
-        N = x.shape[0]
+        N = a.shape[0]
         
-        raise ValueError()
+        """
+        print 'node', node
+        print 'a'
+        print a
+        print 'b'
+        print b
+        print 'w'
+        print w
+        print 'v'
+        print v
+        print 'gw'
+        print gw
+        print 'gv'
+        print gv
+        """
+        '''
+        def bump(i, j):
+            t = numpy.zeros((N, N))
+            t[i, j] = 1
+            return t
+        
+        gA = numpy.zeros((N, N), dtype=node.outputs[0].dtype)
+        for kk, wweight in enumerate(gw):
+            for i in range(N):
+                for j in range(N):
+                    gA[i,j] += wweight * (v[:, kk].T.dot(bump(i, j).dot(v[:, kk])))
+        '''
+
+        outer = numpy.outer
+        GA = lambda n: sum(v[:, m] * gv.T[n].dot(v[:, m]) / (w[n] - w[m])
+                          for m in xrange(N) if m != n)
+        gA = sum(outer(v[:, n], v[:, n] * gw[n] + GA(n))
+                for n in xrange(N))
+
+        def bump(i, j):
+            t = numpy.zeros((N, N))
+            t[i, j] = 1
+            return t
+        
+        gB = numpy.zeros((N, N), dtype=node.outputs[0].dtype)
+        for kk, wweight in enumerate(gw):
+            for i in range(N):
+                for j in range(N):
+                    gB[i,j] += wweight * (v[:, kk].T.dot(-w[kk]*bump(i, j).dot(v[:, kk])))
+
+
+        h = 1e-7
+        # derivative of eigenectors with respect to b[i,j]
+        dX_Bij = lambda i,j : (scipy.linalg.eigh(a, b + h*bump(i,j))[1] - scipy.linalg.eigh(a, b)[1]) / h
+        for i in range(N):
+            for j in range(N):
+                gB[i,j] += (gv * dX_Bij(i,j)).sum()
+
 
         # Numpy's eigh(a, 'L') (eigh(a, 'U')) is a function of tril(a)
         # (triu(a)) only.  This means that partial derivative of
@@ -1202,16 +1260,18 @@ class GEighGrad(Op):
         # opposite triangle contributes to variation of two elements
         # of Hermitian (symmetric) matrix. The following line
         # implements the necessary logic.
-        out = self.tri0(g) + self.tri1(g).T
+        out1 = self.tri0(gA) + self.tri1(gA).T
+        out2 = self.tri0(gB) + self.tri1(gB).T
 
         # The call to self.tri0 in perform upcast from float32 to
         # float64 or from int* to int64 in numpy 1.6.1 but not in
         # 1.6.2. We do not want version dependent dtype in Theano.
         # We think it should be the same as the output.
-        outputs[0][0] = numpy.asarray(out, dtype=node.outputs[0].dtype)
+        outputs[0][0] = numpy.asarray(out1, dtype=node.outputs[0].dtype)
+        outputs[1][0] = numpy.asarray(out2, dtype=node.outputs[1].dtype)
 
-    #def infer_shape(self, node, shapes):
-    #    return [shapes[0]]
+    def infer_shape(self, node, shapes):
+        return [shapes[0], shapes[1]]
 
 def geigh(a, b, lower=True, turbo=True):
     return GEigh(lower, turbo)(a, b)

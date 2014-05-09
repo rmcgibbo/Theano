@@ -600,11 +600,47 @@ def test_geigh_grad():
     import scipy.linalg
 
     A = theano.tensor.dmatrix('a')
+    w, v = eigh(A)
+    grad = theano.gradient.grad(w.sum() + v.sum(), [A])
+    f = function([A], grad)
+
+    a = numpy.random.RandomState(0).randn(2,2)
+    a = a + a.T
+    print 'test_linalg.py a=\n', a
+    print f(a)
+
+def test_geigh_grad():
+    if not imported_scipy:
+        raise SkipTest("Scipy needed for the Solve op.")
+    import scipy.linalg
+
+    A = theano.tensor.dmatrix('a')
     B = theano.tensor.dmatrix('b')
-    grad = theano.gradient.grad(geigh(A, B)[0].sum(), [A])
 
-    f = function([A, B], grad)
+    value = geigh(A, B)[1][0,0]
+    grad = theano.gradient.grad(value, [B])
+    f = function([A,B], value)
+    g = function([A,B], grad)
+    
+    N = 3
+    a = numpy.random.RandomState(0).randn(N,N)
+    a = a + a.T
+    b = numpy.array([[3,1,0],[0,10,0],[1,2,8]])
+    
+    h = 1e-7
+    def bump(i, j):
+        t = numpy.zeros((N, N))
+        t[i, j] = h
+        return t
 
+    got = g(a, b)[0]
+    print 'got\n', got
+    ng = lambda i,j : (f(a, b + bump(i,j)) - f(a,b)) / h
+    
+    fd = numpy.array([[ng(i,j) for j in range(N)] for i in range(N)])
+    print 'finite diff\n', fd
+
+    numpy.testing.assert_array_almost_equal(got, fd)
 
 
 
