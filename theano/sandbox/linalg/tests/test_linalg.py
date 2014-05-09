@@ -617,7 +617,9 @@ def test_geigh_grad():
     A = theano.tensor.dmatrix('a')
     B = theano.tensor.dmatrix('b')
 
-    value = geigh(A, B)[1][0,0]
+    w, v = geigh(A, B)
+    value = w.sum() + 3*v.sum()
+    #value = geigh(A, B)[1].dot([[1,2,3],[3,4,5],[5,6,7]]).sum() + geigh(A, B)[0].sum()
     grad = theano.gradient.grad(value, [B])
     f = function([A,B], value)
     g = function([A,B], grad)
